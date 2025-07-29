@@ -4,6 +4,7 @@ import os
 import platform as platform_module
 import shutil
 import subprocess
+import sys
 import textwrap
 from collections.abc import MutableMapping, Set
 from functools import cache
@@ -357,7 +358,7 @@ def setup_python(
             "-arch=amd64",
             "-host_arch=amd64",
             "&&",
-            "python",
+            sys.executable,
             "-c",
             # this command needs to be one line for Windows reasons
             "import sys, json, pathlib, os; pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(os.environ)))",
