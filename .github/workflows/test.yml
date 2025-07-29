@@ -32,6 +32,11 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # GraalPy's JIT only wastes memory with the many short-running Python processes
+  # N.b.: For GraalPy 25 this variable got renamed to GRAAL_PYTHON_VM_ARGS
+  GRAAL_PYTHON_ARGS: "--engine.CompilerThreads=1 --vm.Xmx1500M"
+
 jobs:
   test:
     name: Test on ${{ matrix.os }} (${{ matrix.python_version }})
