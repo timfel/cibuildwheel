@@ -21,14 +21,14 @@ on:
         description: GraalPy Windows build identifier
         required: true
         type: string
-        default: gp312_250-win_amd64
+        default: gp311_242-win_amd64
 
 permissions: {}
 
 env:
   REPRO_RUNS_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.runs_on || 'windows-latest' }}
   REPRO_ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '25' }}
-  REPRO_BUILD_IDENTIFIER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_identifier || 'gp312_250-win_amd64' }}
+  REPRO_BUILD_IDENTIFIER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_identifier || 'gp311_242-win_amd64' }}
 
 concurrency:
   group: repro-2754-${{ github.ref }}
@@ -95,3 +95,4 @@ jobs:
       with:
         name: repro-2754-${{ env.REPRO_RUNS_ON }}-${{ env.REPRO_BUILD_IDENTIFIER }}
         path: repro-2754/logs
+
