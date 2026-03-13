@@ -1,4 +1,9 @@
+import os
 import textwrap
+
+import pytest
+
+from cibuildwheel.venv import find_uv
 
 from . import test_projects, utils
 
@@ -76,3 +81,29 @@ def test_pep518(tmp_path, build_frontend_env):
     print("\n".join(f"  {f}" for f in contents))
 
     assert len(contents) == len(basic_project.files)
+
+
+def test_issue_2754_windows_graalpy_uv(tmp_path):
+    if os.environ.get("CIBW_TEST_REPRO_2754") != "1":
+        pytest.skip("issue #2754 repro test is only enabled explicitly")
+
+    if utils.get_platform() != "windows":
+        pytest.skip("issue #2754 repro test only runs on Windows")
+
+    if find_uv() is None:
+        pytest.skip("Can't find uv, so skipping issue #2754 repro test")
+
+    project_dir = tmp_path / "project"
+    basic_project.generate(project_dir)
+
+    build_identifier = os.environ.get("CIBW_TEST_REPRO_2754_BUILD", "gp312_250-win_amd64")
+    build_env = {
+        "CIBW_BUILD": build_identifier,
+        "CIBW_BUILD_FRONTEND": "build[uv]",
+        "CIBW_ENABLE": "graalpy",
+    }
+
+    actual_wheels = utils.cibuildwheel_run(project_dir, add_env=build_env)
+
+    assert len(actual_wheels) == 1
+    assert actual_wheels[0].startswith("spam-0.1.0-graalpy")
