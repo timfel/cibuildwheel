@@ -61,6 +61,7 @@ jobs:
         if (-not $env:CROSS_REPO_GITHUB_TOKEN) {
           throw 'Missing CROSS_REPO_GITHUB_TOKEN secret for cross-repo artifact download.'
         }
+        $token = $env:CROSS_REPO_GITHUB_TOKEN.Trim()
         if ($env:REPRO_GRAALPY_ARTIFACT_URL -notmatch '/artifacts/(\d+)') {
           throw "Could not extract artifact id from URL: $env:REPRO_GRAALPY_ARTIFACT_URL"
         }
@@ -72,7 +73,7 @@ jobs:
 
         Invoke-WebRequest `
           -Headers @{
-            Authorization = "Bearer $env:CROSS_REPO_GITHUB_TOKEN"
+            Authorization = "Bearer $token"
             Accept = 'application/vnd.github+json'
           } `
           -Uri $downloadUrl `
