@@ -25,14 +25,19 @@ on:
 
 permissions: {}
 
+env:
+  REPRO_RUNS_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.runs_on || 'windows-latest' }}
+  REPRO_ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '25' }}
+  REPRO_BUILD_IDENTIFIER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_identifier || 'gp312_250-win_amd64' }}
+
 concurrency:
-  group: repro-2754-${{ github.ref }}-${{ inputs.runs_on }}-${{ inputs.build_identifier }}
+  group: repro-2754-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   reproduce:
-    name: Reproduce #2754 on ${{ inputs.runs_on }} (${{ inputs.build_identifier }})
-    runs-on: ${{ inputs.runs_on }}
+    name: Reproduce #2754 on ${{ env.REPRO_RUNS_ON }} (${{ env.REPRO_BUILD_IDENTIFIER }})
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runs_on || 'windows-latest' }}
     timeout-minutes: 360
     steps:
     - uses: actions/checkout@v6
@@ -48,11 +53,11 @@ jobs:
       shell: pwsh
       env:
         CIBW_TEST_REPRO_2754: "1"
-        CIBW_TEST_REPRO_2754_BUILD: ${{ inputs.build_identifier }}
+        CIBW_TEST_REPRO_2754_BUILD: ${{ env.REPRO_BUILD_IDENTIFIER }}
       run: |
         $ErrorActionPreference = 'Stop'
 
-        $iterations = [int] '${{ inputs.iterations }}'
+        $iterations = [int] '${{ env.REPRO_ITERATIONS }}'
         $testNode = 'test/test_pep518.py::test_issue_2754_windows_graalpy_uv'
         $root = Join-Path $PWD 'repro-2754'
         $logsDir = Join-Path $root 'logs'
@@ -60,7 +65,7 @@ jobs:
         New-Item -ItemType Directory -Force $root | Out-Null
         New-Item -ItemType Directory -Force $logsDir | Out-Null
 
-        "# issue 2754 repro`n`n- runner: ${{ inputs.runs_on }}`n- build: $env:CIBW_TEST_REPRO_2754_BUILD`n- iterations: $iterations`n- test: `$testNode" >> $env:GITHUB_STEP_SUMMARY
+        "# issue 2754 repro`n`n- runner: ${{ env.REPRO_RUNS_ON }}`n- build: $env:CIBW_TEST_REPRO_2754_BUILD`n- iterations: $iterations`n- test: `$testNode" >> $env:GITHUB_STEP_SUMMARY
 
         for ($iteration = 1; $iteration -le $iterations; $iteration++) {
           $iterationName = 'iteration-{0:d3}' -f $iteration
@@ -88,5 +93,5 @@ jobs:
     - uses: actions/upload-artifact@v7
       if: always()
       with:
-        name: repro-2754-${{ inputs.runs_on }}-${{ inputs.build_identifier }}
+        name: repro-2754-${{ env.REPRO_RUNS_ON }}-${{ env.REPRO_BUILD_IDENTIFIER }}
         path: repro-2754/logs
