@@ -4,31 +4,19 @@ on:
   push:
   workflow_dispatch:
     inputs:
-      runs_on:
-        description: GitHub Actions runner
-        required: true
-        type: choice
-        default: windows-latest
-        options:
-          - windows-latest
-          - windows-11-arm
       iterations:
-        description: Number of repro attempts
+        description: Number of full pytest runs
         required: true
         type: number
-        default: 25
-      build_identifier:
-        description: GraalPy Windows build identifier
-        required: true
-        type: string
-        default: gp311_242-win_amd64
+        default: 1
 
 permissions: {}
 
 env:
-  REPRO_RUNS_ON: ${{ github.event_name == 'workflow_dispatch' && inputs.runs_on || 'windows-latest' }}
-  REPRO_ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '25' }}
-  REPRO_BUILD_IDENTIFIER: ${{ github.event_name == 'workflow_dispatch' && inputs.build_identifier || 'gp311_242-win_amd64' }}
+  REPRO_RUNS_ON: windows-latest
+  REPRO_ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '1' }}
+  REPRO_PYTHON: '3.13'
+  REPRO_UV_VERSION: '0.10.7'
 
 concurrency:
   group: repro-2754-${{ github.ref }}
@@ -36,8 +24,8 @@ concurrency:
 
 jobs:
   reproduce:
-    name: Reproduce #2754 on ${{ env.REPRO_RUNS_ON }} (${{ env.REPRO_BUILD_IDENTIFIER }})
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runs_on || 'windows-latest' }}
+    name: Reproduce #2754 on ${{ env.REPRO_RUNS_ON }}
+    runs-on: windows-latest
     timeout-minutes: 360
     steps:
     - uses: actions/checkout@v6
@@ -45,41 +33,59 @@ jobs:
         persist-credentials: false
     - uses: actions/setup-python@v6
       with:
-        python-version: "3.x"
+        python-version: ${{ env.REPRO_PYTHON }}
     - uses: astral-sh/setup-uv@v7
+      with:
+        version: ${{ env.REPRO_UV_VERSION }}
     - name: Install dependencies
       run: uv sync --no-dev --group test
-    - name: Reproduce issue 2754
+    - name: Set CIBW_ENABLE
+      shell: bash
+      run: |
+        CIBW_ENABLE=$(uv run --no-sync python -c 'import sys, test.utils as c; sys.stdout.write(c.DEFAULT_CIBW_ENABLE)')
+        CIBW_ENABLE+=" graalpy"
+        echo "CIBW_ENABLE=${CIBW_ENABLE}" >> $GITHUB_ENV
+    - name: Generate a sample project
+      run: uv run --no-sync -m test.test_projects test.test_0_basic.basic_project sample_proj
+    - name: Run a sample build (GitHub Action)
+      uses: ./
+      with:
+        package-dir: sample_proj
+        output-dir: wheelhouse
+      env:
+        CIBW_BUILD_FRONTEND: 'build[uv]'
+    - name: Reproduce issue 2754 closer to PR #2741
       shell: pwsh
       env:
-        CIBW_TEST_REPRO_2754: "1"
-        CIBW_TEST_REPRO_2754_BUILD: ${{ env.REPRO_BUILD_IDENTIFIER }}
+        CIBW_TEST_REPRO_2754_ORIGINAL_PR_MODE: "1"
       run: |
         $ErrorActionPreference = 'Stop'
 
         $iterations = [int] '${{ env.REPRO_ITERATIONS }}'
-        $testNode = 'test/test_pep518.py::test_issue_2754_windows_graalpy_uv'
+        $pytestArgs = @(
+          '-m', 'not serial and not pyodide and not android and not ios',
+          '--numprocesses=4',
+          '-x',
+          '--durations', '0',
+          '--timeout=2400',
+          '-vv',
+          'test/test_0_basic.py',
+          'test/test_before_test.py'
+        )
         $root = Join-Path $PWD 'repro-2754'
         $logsDir = Join-Path $root 'logs'
 
         New-Item -ItemType Directory -Force $root | Out-Null
         New-Item -ItemType Directory -Force $logsDir | Out-Null
 
-        "# issue 2754 repro`n`n- runner: ${{ env.REPRO_RUNS_ON }}`n- build: $env:CIBW_TEST_REPRO_2754_BUILD`n- iterations: $iterations`n- test: `$testNode" >> $env:GITHUB_STEP_SUMMARY
+        "# issue 2754 repro`n`n- runner: ${{ env.REPRO_RUNS_ON }}`n- python: ${{ env.REPRO_PYTHON }}`n- uv: ${{ env.REPRO_UV_VERSION }}`n- iterations: $iterations`n- command: pytest $($pytestArgs -join ' ')" >> $env:GITHUB_STEP_SUMMARY
 
         for ($iteration = 1; $iteration -le $iterations; $iteration++) {
           $iterationName = 'iteration-{0:d3}' -f $iteration
-          $iterationRoot = Join-Path $root $iterationName
-          $tempDir = Join-Path $iterationRoot 'temp'
           $logPath = Join-Path $logsDir ($iterationName + '.log')
 
-          New-Item -ItemType Directory -Force $tempDir | Out-Null
-
-          $env:TEMP = $tempDir
-          $env:TMP = $tempDir
-
           Write-Host "::group::Repro $iterationName"
-          & uv run --no-sync python -m pytest -vv -s --maxfail=1 $testNode *>&1 | Tee-Object -FilePath $logPath
+          & uv run --no-sync python -m pytest @pytestArgs *>&1 | Tee-Object -FilePath $logPath
           $exitCode = $LASTEXITCODE
           Write-Host "::endgroup::"
 
@@ -93,6 +99,6 @@ jobs:
     - uses: actions/upload-artifact@v7
       if: always()
       with:
-        name: repro-2754-${{ env.REPRO_RUNS_ON }}-${{ env.REPRO_BUILD_IDENTIFIER }}
+        name: repro-2754-${{ env.REPRO_RUNS_ON }}-original-pr-shape
         path: repro-2754/logs
 

@@ -28,9 +28,11 @@ GRAALPY_ARCHS = ["x86_64", "AMD64", "aarch64", "arm64"]
 
 SINGLE_PYTHON_VERSION: Final[tuple[int, int]] = (3, 12)
 
-# temporary workaround: set by build_frontend_env fixture to skip graalpy
-# when uv is the build frontend (compatibility issue between graalpy and uv)
-include_graalpy_in_expected_wheels: bool = True
+# temporary workaround: set by build_frontend_env fixture to skip GraalPy
+# when uv is the build frontend (compatibility issue between GraalPy and uv)
+# None means include all GraalPy wheels, and a set selects which GraalPy
+# minor versions should be included in expected wheels.
+expected_wheel_graalpy_versions: set[str] | None = None
 
 _AARCH64_CAN_RUN_ARMV7: Final[bool] = Architecture.aarch64.value not in EMULATED_ARCHS and {
     None: Architecture.armv7l.value not in EMULATED_ARCHS,
@@ -309,10 +311,16 @@ def _expected_wheels(
                 "pp311-pypy311_pp73",
             ]
 
-        if EnableGroup.GraalPy in enable_groups and include_graalpy_in_expected_wheels:
+        if EnableGroup.GraalPy in enable_groups:
+            graalpy_tags = [
+                ("311", "graalpy311-graalpy242_311_native"),
+                ("312", "graalpy312-graalpy250_312_native"),
+            ]
             python_abi_tags += [
-                "graalpy311-graalpy242_311_native",
-                "graalpy312-graalpy250_312_native",
+                tag
+                for version, tag in graalpy_tags
+                if expected_wheel_graalpy_versions is None
+                or version in expected_wheel_graalpy_versions
             ]
 
     if machine_arch == "ARM64" and platform == "windows":

@@ -191,13 +191,17 @@ def build_frontend_env(request: pytest.FixtureRequest) -> Generator[dict[str, st
     uses_uv = "uv" in frontend
     env: dict[str, str] = {"CIBW_BUILD_FRONTEND": frontend}
     if uses_uv:
-        utils.include_graalpy_in_expected_wheels = False
-        env["CIBW_SKIP"] = "gp*"  # skip graalpy when using uv, until uv supports it
+        if os.environ.get("CIBW_TEST_REPRO_2754_ORIGINAL_PR_MODE") == "1":
+            utils.expected_wheel_graalpy_versions = {"312"}
+            env["CIBW_SKIP"] = "gp311*"
+        else:
+            utils.expected_wheel_graalpy_versions = set()
+            env["CIBW_SKIP"] = "gp*"  # skip graalpy when using uv, until uv supports it
     try:
         yield env
     finally:
         if uses_uv:
-            utils.include_graalpy_in_expected_wheels = True
+            utils.expected_wheel_graalpy_versions = None
 
 
 @pytest.fixture
