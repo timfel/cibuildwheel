@@ -9,6 +9,15 @@ on:
         required: true
         type: number
         default: 1
+      graalpython_artifact_url:
+        description: Optional GraalPython artifact URL to consume for gp312_250-win_amd64
+        required: false
+        type: string
+      graalpython_artifact_repo:
+        description: Repo owning the artifact URL
+        required: false
+        type: string
+        default: timfel/graalpython
 
 permissions: {}
 
@@ -17,6 +26,8 @@ env:
   REPRO_ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '1' }}
   REPRO_PYTHON: '3.13'
   REPRO_UV_VERSION: '0.10.7'
+  REPRO_GRAALPY_ARTIFACT_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.graalpython_artifact_url || '' }}
+  REPRO_GRAALPY_ARTIFACT_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.graalpython_artifact_repo || 'timfel/graalpython' }}
 
 concurrency:
   group: repro-2754-${{ github.ref }}
@@ -39,6 +50,59 @@ jobs:
         version: ${{ env.REPRO_UV_VERSION }}
     - name: Install dependencies
       run: uv sync --no-dev --group test
+    - name: Download GraalPy artifact override
+      if: env.REPRO_GRAALPY_ARTIFACT_URL != ''
+      shell: pwsh
+      env:
+        CROSS_REPO_GITHUB_TOKEN: ${{ secrets.CROSS_REPO_GITHUB_TOKEN }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        if (-not $env:CROSS_REPO_GITHUB_TOKEN) {
+          throw 'Missing CROSS_REPO_GITHUB_TOKEN secret for cross-repo artifact download.'
+        }
+        if ($env:REPRO_GRAALPY_ARTIFACT_URL -notmatch '/artifacts/(\d+)') {
+          throw "Could not extract artifact id from URL: $env:REPRO_GRAALPY_ARTIFACT_URL"
+        }
+
+        $artifactId = $Matches[1]
+        $downloadUrl = "https://api.github.com/repos/$env:REPRO_GRAALPY_ARTIFACT_REPO/actions/artifacts/$artifactId/zip"
+        $artifactZip = Join-Path $PWD 'graalpython-artifact.zip'
+        $artifactRoot = Join-Path $PWD 'graalpython-artifact'
+
+        Invoke-WebRequest `
+          -Headers @{
+            Authorization = "Bearer $env:CROSS_REPO_GITHUB_TOKEN"
+            Accept = 'application/vnd.github+json'
+          } `
+          -Uri $downloadUrl `
+          -OutFile $artifactZip
+
+        Expand-Archive -LiteralPath $artifactZip -DestinationPath $artifactRoot -Force
+
+        $artifactTar = Get-ChildItem -Path $artifactRoot -Recurse -File -Filter *.tar | Select-Object -First 1
+        if (-not $artifactTar) {
+          throw 'Expected a .tar file inside the downloaded GraalPython artifact.'
+        }
+
+        tar -xf $artifactTar.FullName -C $artifactRoot
+
+        $graalpyHome = Get-ChildItem -Path $artifactRoot -Recurse -Directory |
+          Where-Object { $_.Name -eq 'GRAALPY_NATIVE_STANDALONE' } |
+          Select-Object -First 1
+        if (-not $graalpyHome) {
+          throw 'Could not locate GRAALPY_NATIVE_STANDALONE in the downloaded artifact.'
+        }
+
+        $overrideExe = Join-Path $graalpyHome.FullName 'bin\graalpy.exe'
+        if (-not (Test-Path $overrideExe)) {
+          throw "Could not locate graalpy.exe at $overrideExe"
+        }
+
+        "CIBW_GRAALPY_WINDOWS_EXE_GP312_250_WIN_AMD64=$overrideExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "REPRO_GRAALPY_OVERRIDE_HOME=$($graalpyHome.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "- graalpython artifact: $env:REPRO_GRAALPY_ARTIFACT_URL" >> $env:GITHUB_STEP_SUMMARY
+        "- graalpython override home: $($graalpyHome.FullName)" >> $env:GITHUB_STEP_SUMMARY
     - name: Set CIBW_ENABLE
       shell: bash
       run: |

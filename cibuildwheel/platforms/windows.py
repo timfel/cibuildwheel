@@ -145,6 +145,18 @@ def install_graalpy(tmp: Path, url: str) -> Path:
     return installation_path / "bin" / "graalpy.exe"
 
 
+def graalpy_override_executable(identifier: str) -> Path | None:
+    env_suffix = identifier.upper().replace("-", "_")
+    candidates = [
+        os.environ.get(f"CIBW_GRAALPY_WINDOWS_EXE_{env_suffix}"),
+        os.environ.get("CIBW_GRAALPY_WINDOWS_EXE"),
+    ]
+    for candidate in candidates:
+        if candidate:
+            return Path(candidate)
+    return None
+
+
 def setup_setuptools_cross_compile(
     tmp: Path,
     python_configuration: PythonConfiguration,
@@ -262,7 +274,13 @@ def setup_python(
         assert python_configuration.url is not None
         base_python = install_pypy(tmp, python_configuration.arch, python_configuration.url)
     elif implementation_id.startswith("gp"):
-        base_python = install_graalpy(tmp, python_configuration.url or "")
+        base_python = graalpy_override_executable(python_configuration.identifier)
+        if base_python is not None:
+            log.notice(
+                f"Using GraalPy override executable for {python_configuration.identifier} at {base_python}"
+            )
+        else:
+            base_python = install_graalpy(tmp, python_configuration.url or "")
     else:
         msg = "Unknown Python implementation"
         raise ValueError(msg)
