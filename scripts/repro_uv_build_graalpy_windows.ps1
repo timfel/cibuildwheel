@@ -95,6 +95,19 @@ function Get-GraalPyExePath {
         return [System.IO.Path]::GetFullPath($GraalPyExe)
     }
 
+    foreach ($envName in @('REPRO_GRAALPY_EXE', 'GRAALPY_EXE')) {
+        $envValue = [Environment]::GetEnvironmentVariable($envName, 'Process')
+        if (-not $envValue) {
+            $envValue = [Environment]::GetEnvironmentVariable($envName, 'User')
+        }
+        if (-not $envValue) {
+            $envValue = [Environment]::GetEnvironmentVariable($envName, 'Machine')
+        }
+        if ($envValue) {
+            return [System.IO.Path]::GetFullPath($envValue)
+        }
+    }
+
     $helper = Join-Path $PSScriptRoot 'fetch_graalpy_artifact.ps1'
     $helperResult = & $helper -ArtifactUrl $ArtifactUrl -ArtifactRepo $ArtifactRepo -DestinationRoot (Join-Path $WorkRoot 'graalpython-artifact')
     return ($helperResult | Select-Object -Last 1).ToString().Trim()
@@ -203,7 +216,6 @@ function Invoke-ReproCase {
 
     Invoke-LoggedCommand -Label 'uv --version' -Command @($setup.Uv, '--version') -WorkingDirectory $CaseRoot -LogPath $logPath -Environment $envMap | Out-Null
     Invoke-LoggedCommand -Label 'python --version' -Command @($setup.Python, '--version') -WorkingDirectory $CaseRoot -LogPath $logPath -Environment $envMap | Out-Null
-    Invoke-LoggedCommand -Label 'python identity' -Command @($setup.Python, '-c', 'import sys; print(sys.executable); print(sys.prefix)') -WorkingDirectory $CaseRoot -LogPath $logPath -Environment $envMap | Out-Null
 
     if ($CaseFrontend -eq 'build-uv') {
         $installExit = Invoke-LoggedCommand -Label 'Install build[virtualenv]' -Command @($setup.Uv, 'pip', 'install', '--upgrade', 'build[virtualenv]') -WorkingDirectory $CaseRoot -LogPath $logPath -Environment $envMap
@@ -275,6 +287,7 @@ if ($uvFailed) {
 Write-Host 'uv did not fail.'
 Write-Host "Work directory retained at $root for inspection."
 exit 0
+
 
 
 
