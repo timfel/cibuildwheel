@@ -287,9 +287,3 @@ if ($uvFailed) {
 Write-Host 'uv did not fail.'
 Write-Host "Work directory retained at $root for inspection."
 exit 0
-
-
-
-
-
-
