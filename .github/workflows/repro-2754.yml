@@ -9,6 +9,16 @@ on:
         required: true
         type: number
         default: 1
+      pytest_numprocesses:
+        description: pytest-xdist worker count
+        required: false
+        type: string
+        default: '4'
+      unique_uv_cache:
+        description: Use a unique UV_CACHE_DIR per iteration
+        required: false
+        type: boolean
+        default: false
       graalpython_artifact_url:
         description: Optional GraalPython artifact URL to consume for gp312_250-win_amd64
         required: false
@@ -25,6 +35,8 @@ env:
   REPRO_RUNS_ON: windows-latest
   REPRO_ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '1' }}
   REPRO_PYTHON: '3.13'
+  REPRO_PYTEST_NUMPROCESSES: ${{ github.event_name == 'workflow_dispatch' && inputs.pytest_numprocesses || '4' }}
+  REPRO_UNIQUE_UV_CACHE: ${{ github.event_name == 'workflow_dispatch' && inputs.unique_uv_cache || 'false' }}
   REPRO_UV_VERSION: '0.10.7'
   REPRO_GRAALPY_ARTIFACT_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.graalpython_artifact_url || '' }}
   REPRO_GRAALPY_ARTIFACT_REPO: ${{ github.event_name == 'workflow_dispatch' && inputs.graalpython_artifact_repo || 'timfel/graalpython' }}
@@ -129,7 +141,7 @@ jobs:
         $iterations = [int] '${{ env.REPRO_ITERATIONS }}'
         $pytestArgs = @(
           '-m', 'not serial and not pyodide and not android and not ios',
-          '--numprocesses=4',
+          '--numprocesses=${{ env.REPRO_PYTEST_NUMPROCESSES }}',
           '-x',
           '--durations', '0',
           '--timeout=2400',
@@ -143,11 +155,19 @@ jobs:
         New-Item -ItemType Directory -Force $root | Out-Null
         New-Item -ItemType Directory -Force $logsDir | Out-Null
 
-        "# issue 2754 repro`n`n- runner: ${{ env.REPRO_RUNS_ON }}`n- python: ${{ env.REPRO_PYTHON }}`n- uv: ${{ env.REPRO_UV_VERSION }}`n- iterations: $iterations`n- command: pytest $($pytestArgs -join ' ')" >> $env:GITHUB_STEP_SUMMARY
+        "# issue 2754 repro`n`n- runner: ${{ env.REPRO_RUNS_ON }}`n- python: ${{ env.REPRO_PYTHON }}`n- uv: ${{ env.REPRO_UV_VERSION }}`n- pytest workers: ${{ env.REPRO_PYTEST_NUMPROCESSES }}`n- unique uv cache: ${{ env.REPRO_UNIQUE_UV_CACHE }}`n- iterations: $iterations`n- command: pytest $($pytestArgs -join ' ')" >> $env:GITHUB_STEP_SUMMARY
 
         for ($iteration = 1; $iteration -le $iterations; $iteration++) {
           $iterationName = 'iteration-{0:d3}' -f $iteration
           $logPath = Join-Path $logsDir ($iterationName + '.log')
+
+          if ('${{ env.REPRO_UNIQUE_UV_CACHE }}' -eq 'true') {
+            $iterationCache = Join-Path $root ('uv-cache-' + $iterationName)
+            New-Item -ItemType Directory -Force $iterationCache | Out-Null
+            $env:UV_CACHE_DIR = $iterationCache
+          } else {
+            if (Test-Path Env:UV_CACHE_DIR) { Remove-Item Env:UV_CACHE_DIR }
+          }
 
           Write-Host "::group::Repro $iterationName"
           & uv run --no-sync python -m pytest @pytestArgs *>&1 | Tee-Object -FilePath $logPath
