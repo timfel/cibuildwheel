@@ -258,6 +258,7 @@ def setup_python(
 ) -> tuple[Path, dict[str, str]]:
     tmp.mkdir()
     implementation_id = python_configuration.identifier.split("-")[0]
+    base_python: Path | None = None
     python_libs_base = None
     log.step(f"Installing Python {implementation_id}...")
     if implementation_id.startswith("cp"):
@@ -284,6 +285,7 @@ def setup_python(
     else:
         msg = "Unknown Python implementation"
         raise ValueError(msg)
+    assert base_python is not None
     assert base_python.exists()
 
     if build_frontend == "build[uv]" and not can_use_uv(python_configuration):
