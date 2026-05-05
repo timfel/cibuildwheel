@@ -195,7 +195,16 @@ def install_pypy(tmp: Path, url: str) -> Path:
 
 
 def install_graalpy(tmp: Path, url: str) -> Path:
+    original_url = url
     graalpy_archive = url.rsplit("/", 1)[-1]
+    url = os.environ.get("CIBW_GRAALPY_MACOS_URL", url)
+    if "-macos-amd64" in graalpy_archive:
+        url = os.environ.get("CIBW_GRAALPY_MACOS_AMD64_URL", url)
+    elif "-macos-aarch64" in graalpy_archive:
+        url = os.environ.get("CIBW_GRAALPY_MACOS_AARCH64_URL", url)
+    if url != original_url:
+        graalpy_archive = url.rsplit("/", 1)[-1]
+
     extension = ".tar.gz"
     assert graalpy_archive.endswith(extension)
     installation_path = CIBW_CACHE_PATH / graalpy_archive[: -len(extension)]
